@@ -173,7 +173,7 @@ private:
 	double lastError;		// 上一次误差值
 	double errorIntegral;	// 误差积分值
 
-public:
+public:	
 	void initial(double p, double i, double d, double target)
 	{
 		kp = p;
@@ -182,6 +182,13 @@ public:
 		targetValue = target;
 		lastError = 0;
 		errorIntegral = 0;
+	}
+
+	void initialkp_ki_kd(double p, double i, double d)
+	{
+		kp = p;
+		ki = i;
+		kd = d;
 	}
 
 	double calculate(double input)
@@ -211,7 +218,7 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 	/*▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼*\
 	█	检测路面																█
 	\*▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲*/
-	if (flag == false) timecounter++;
+	if (flag==false) timecounter++;
 	if (flag == false && timecounter == 60 && _speed < 30)
 	{
 		isCementRoad = false;
@@ -225,11 +232,12 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 	\*▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲*/
 	double targetAngleError = 0.0; //目标误差
 	double currentAngleError = atan2(_midline[5][0], _midline[5][1]); //当前误差
-	double kp = 0.0, ki = 0.0, kd = 0.0;
+	double kp = 0.0, kp2 = 0.0, ki = 0.0, kd = 0.0;
 
 	//计算前方是直道还是弯道
 	circle myCurve;
 	float minCruve = 500.0;
+	int delta2 = constrain(10, 35, (_speed + 60) / 10);
 	if (!isCementRoad)
 	{
 		for (int fStep = 0; fStep < 40; fStep++)
@@ -258,34 +266,54 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 	{
 		isFirstFrame = false;
 		angleController.initial(1.0, 0.0, 0.0, targetAngleError);
+		offsetController.initial(11, 0.01, 10.0, 0.0);
 	}
 
-	if (minCruve > 250)
+	if (minCruve > 450)
+	{
+		kp = 0.35;
+		ki = 0.01;
+		kd = 5;
+		kp2 = 0.1;
+	}
+	else if (minCruve > 250)
 	{
 		kp = 0.5;
-		ki = 3;
-		kd = 0;
+		ki = 0.01;
+		kd = 5;
+		kp2 = 0.1;
 	}
 	else if (minCruve > 120)
 	{
 		kp = 0.7;
-		ki = 3;
-		kd = 0;
+		ki = 0.01;
+		kd = 5;
+		kp2 = 0.2;
 	}
 	else if (minCruve > 40)
 	{
-		kp = 0.9;
-		ki = 3;
-		kd = 0;
+		kp = 0.95;
+		ki = 0.01;
+		kd = 5;
+		kp2 = 0.5;
 	}
 	else
 	{
-		kp = 1.1;
-		ki = 3;
-		kd = 0;
+		kp= 1.15;
+		ki = 0.01;
+		kd = 5;
+		kp2 = 0.5;
 	}
 
-	angleController.initial(kp, ki, kd, targetAngleError);
+	angleController.initialkp_ki_kd(kp, ki, kd);
+	if (isCementRoad)
+	{
+		offsetController.initialkp_ki_kd(8.0, 0.01, 9.0);
+	}
+	else
+	{
+		offsetController.initialkp_ki_kd(12.5, 0.01, 11.0);
+	}
 
 	//舵角PID控制
 	//*cmdSteer = constrain(-1.0, 1.0, angleController.calculate(currentAngleError));
@@ -295,15 +323,15 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 	\*▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲*/
 	double targetOffsetError = 0.0; //目标误差
 	double currentOffsetError = _midline[1][0]; //当前误差
-	offsetController.initial(0.5, 3.0, 0.0, targetOffsetError);
-	*cmdSteer = constrain(-1.0, 1.0, constrain(-1.0, 1.0, angleController.calculate(currentAngleError)) + 0.2 * constrain(-1.0, 1.0, offsetController.calculate(currentOffsetError)));
+	//offsetController.initial(0.5, 3.0, 0.0, targetOffsetError);
+	* cmdSteer = constrain(-1.0,1.0, constrain(-1.0, 1.0, angleController.calculate(currentAngleError)) + constrain(-1.0, 1.0, offsetController.calculate(currentOffsetError)));
 
 	/*▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼*\
 	█	速度控制																█
 	\*▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲*/
 	double targetSpeed;  //目标车速
 	double currentSpeed = _speed;	//当前误差
-
+	
 
 	//设定目标速度，如果前方弯道就设定低，直道就设定高
 	if (isCementRoad)
@@ -381,11 +409,11 @@ static void userDriverSetParam(float* cmdAcc, float* cmdBrake, float* cmdSteer, 
 		*cmdAcc = 0;
 		*cmdBrake = 0.43;
 	}
-
+	
 	//更新档位
 	updateGear(cmdGear);
 
 	//窗口可视化
 	cls_visual.Fig2Y(1, 0, 300, 0, 500, 10, "Target V", targetSpeed, "Curvature", minCruve, "Current V", _speed);
-	cls_visual.Fig2Y(2, 0, 50, -90, 90, 1, "offsetError", currentOffsetError, "angleerror", currentAngleError);
+	cls_visual.Fig2Y(2, 0, 50,-90,90, 1, "offsetError", currentOffsetError,"angleerror",currentAngleError,"CurrentAngle", *cmdSteer);
 }
